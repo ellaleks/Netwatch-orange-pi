@@ -92,7 +92,7 @@ for unit in netwatch.service netwatch-speed.service; do
 done
 
 install -d -m 0755 "$app" "$config"
-install -m 0644 "$source_dir"/{netwatch.py,netwatch-report.py,netwatch-speed.py,netwatch_config.py,netwatch_telegram.py} "$app/"
+install -m 0644 "$source_dir"/{netwatch.py,netwatch-report.py,netwatch-speed.py,netwatch_config.py,netwatch_summary.py,netwatch_telegram.py} "$app/"
 systemd-analyze verify "$stage/netwatch.service" "$stage/netwatch-speed.service" "$source_dir/netwatch-speed.timer"
 install -m 0644 "$stage/config.ini" "$config/config.ini"
 install -m 0644 "$stage/netwatch.service" "$stage/netwatch-speed.service" "$source_dir/netwatch-speed.timer" "$units/"

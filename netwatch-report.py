@@ -1,33 +1,23 @@
 import argparse
 import os
 import sqlite3
-import tempfile
 import time
-from contextlib import redirect_stdout
+from contextlib import closing
 from datetime import datetime
 from itertools import groupby
-from pathlib import Path
-from zoneinfo import ZoneInfo
 
 from netwatch_config import EXTERNAL_TARGETS, network_settings
+from netwatch_summary import ZONE, maintain_reports, tables_in, write_report
 from netwatch_telegram import deliver_report
 
 DB = 'file:/var/lib/netwatch/netwatch.sqlite3?mode=ro'
-REPORT_DIR = Path('/var/lib/netwatch/reports')
 _, GATEWAY = network_settings()
 TARGETS = (GATEWAY, *EXTERNAL_TARGETS)
-ZONE = ZoneInfo('Europe/Brussels')
 GAP_MS = 8_000
 
 
 def stamp(ms):
     return datetime.fromtimestamp(ms / 1000, ZONE).isoformat(timespec='seconds')
-
-
-def tables_in(db):
-    return {name for name, in db.execute(
-        "SELECT name FROM sqlite_master WHERE type = 'table'"
-    )}
 
 
 def report(db, start, end):
@@ -122,43 +112,32 @@ def report(db, start, end):
         print(f'{stamp(started)} .. {stamp(finished)}  {direction}: {result}')
 
 
-def save_report(db, start, end):
-    REPORT_DIR.mkdir(mode=0o750, exist_ok=True)
-    temporary = tempfile.NamedTemporaryFile(
-        mode='w', encoding='utf-8', dir=REPORT_DIR, prefix='.netwatch-', delete=False
-    )
-    temporary_path = Path(temporary.name)
-    try:
-        with temporary, redirect_stdout(temporary):
-            report(db, start, end)
-        created = datetime.now(ZONE).strftime('%Y-%m-%d_%H-%M-%S%z')
-        final_path = REPORT_DIR / f'netwatch-{created}.txt'
-        temporary_path.replace(final_path)
-    finally:
-        temporary_path.unlink(missing_ok=True)
-    print(f'Report saved: {final_path}')
-    return final_path
-
-
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--hours', type=int, default=24)
     parser.add_argument('--save', action='store_true',
                         help='Save a dated report to /var/lib/netwatch/reports')
+    parser.add_argument('--maintenance', action='store_true',
+                        help='Create calendar summaries and remove expired reports')
     args = parser.parse_args()
     if args.hours < 1:
         parser.error('--hours must be at least 1')
     end = time.time_ns() // 1_000_000
     saved = None
-    with sqlite3.connect(DB, uri=True) as db:
-        db.execute('BEGIN')
-        start = end - args.hours * 3_600_000
-        if args.save:
-            saved = save_report(db, start, end)
-        else:
-            report(db, start, end)
+    if args.save or not args.maintenance:
+        with closing(sqlite3.connect(DB, uri=True)) as db, db:
+            db.execute('BEGIN')
+            start = end - args.hours * 3_600_000
+            if args.save:
+                saved = write_report(lambda: report(db, start, end))
+            else:
+                report(db, start, end)
     if saved is not None:
         deliver_report(saved)
+    if args.maintenance:
+        with closing(sqlite3.connect(DB, uri=True)) as db, db:
+            db.execute('BEGIN')
+            maintain_reports(db)
 
 
 if __name__ == '__main__':

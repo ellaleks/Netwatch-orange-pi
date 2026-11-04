@@ -88,7 +88,7 @@ def run_daily():
             "SERVICE_RESULT": "exit-code" if speed_status else "success",
         }
         report = subprocess.run(
-            [sys.executable, "-u", str(report_script), "--hours", "24", "--save"],
+            [sys.executable, "-u", str(report_script), "--hours", "24", "--save", "--maintenance"],
             env=environment,
         )
     return speed_status or report.returncode

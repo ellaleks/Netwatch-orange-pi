@@ -62,6 +62,7 @@ def main():
                 PRIMARY KEY (run_id, cycle, target)
             )
         """)
+        db.execute("CREATE INDEX IF NOT EXISTS probes_target_time ON probes(target, ts_ms)")
 
         while True:
             started = time.monotonic()
