@@ -81,6 +81,18 @@ def deliver_report(path):
               file=sys.stderr)
     else:
         print(f"Telegram delivery succeeded: {path.name}")
+        return True
+
+
+def delivery_marker(path):
+    return path.with_name(f".{path.name}.telegram-sent")
+
+
+def deliver_summaries(paths):
+    for path in paths:
+        marker = delivery_marker(path)
+        if not marker.exists() and deliver_report(path):
+            marker.touch()
 
 
 def setup():

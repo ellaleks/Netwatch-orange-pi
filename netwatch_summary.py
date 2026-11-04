@@ -7,6 +7,8 @@ from datetime import date, datetime, time, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from netwatch_telegram import delivery_marker
+
 ZONE = ZoneInfo('Europe/Brussels')
 REPORT_DIR = Path('/var/lib/netwatch/reports')
 STAMP = '%Y-%m-%d_%H-%M-%S%z'
@@ -45,10 +47,10 @@ def write_report(render, period=None, directory=REPORT_DIR):
 
 def prune_reports(directory, now):
     cutoff = now.timestamp() - RETENTION_SECONDS
-    existing_periods = set()
+    existing_periods = {}
     if not directory.exists():
         return existing_periods
-    for path in directory.iterdir():
+    for path in sorted(directory.iterdir()):
         match = REPORT_NAME.fullmatch(path.name)
         if match is None or path.is_symlink() or not path.is_file():
             continue
@@ -58,9 +60,11 @@ def prune_reports(directory, now):
             continue
         if created.timestamp() < cutoff:
             path.unlink(missing_ok=True)
+            if match['period']:
+                delivery_marker(path).unlink(missing_ok=True)
             print(f'Expired report removed: {path.name}')
         elif match['period']:
-            existing_periods.add(match['period'])
+            existing_periods[match['period']] = path
     return existing_periods
 
 
@@ -162,5 +166,8 @@ def maintain_reports(db, directory=REPORT_DIR, now=None):
         if midnight_ms(buckets[-1][2]) <= (now.timestamp() - RETENTION_SECONDS) * 1000:
             continue
         if has_measurements(db, tables, targets, buckets[0][1], buckets[-1][2]):
-            write_report(lambda: render_summary(db, period, buckets, tables, targets),
-                         period, directory)
+            existing_periods[period] = write_report(
+                lambda: render_summary(db, period, buckets, tables, targets),
+                period, directory
+            )
+    return list(existing_periods.values())

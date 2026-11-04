@@ -8,7 +8,7 @@ from itertools import groupby
 
 from netwatch_config import EXTERNAL_TARGETS, network_settings
 from netwatch_summary import ZONE, maintain_reports, tables_in, write_report
-from netwatch_telegram import deliver_report
+from netwatch_telegram import deliver_report, deliver_summaries
 
 DB = 'file:/var/lib/netwatch/netwatch.sqlite3?mode=ro'
 _, GATEWAY = network_settings()
@@ -137,7 +137,8 @@ def main():
     if args.maintenance:
         with closing(sqlite3.connect(DB, uri=True)) as db, db:
             db.execute('BEGIN')
-            maintain_reports(db)
+            summaries = maintain_reports(db)
+        deliver_summaries(summaries)
 
 
 if __name__ == '__main__':
