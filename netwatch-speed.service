@@ -14,3 +14,4 @@ NoNewPrivileges=yes
 ProtectHome=yes
 ProtectSystem=strict
 ReadWritePaths=/var/lib/netwatch
+LoadCredential=netwatch-telegram.json

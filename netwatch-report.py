@@ -10,6 +10,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from netwatch_config import EXTERNAL_TARGETS, network_settings
+from netwatch_telegram import deliver_report
 
 DB = 'file:/var/lib/netwatch/netwatch.sqlite3?mode=ro'
 REPORT_DIR = Path('/var/lib/netwatch/reports')
@@ -136,6 +137,7 @@ def save_report(db, start, end):
     finally:
         temporary_path.unlink(missing_ok=True)
     print(f'Report saved: {final_path}')
+    return final_path
 
 
 def main():
@@ -147,13 +149,16 @@ def main():
     if args.hours < 1:
         parser.error('--hours must be at least 1')
     end = time.time_ns() // 1_000_000
+    saved = None
     with sqlite3.connect(DB, uri=True) as db:
         db.execute('BEGIN')
         start = end - args.hours * 3_600_000
         if args.save:
-            save_report(db, start, end)
+            saved = save_report(db, start, end)
         else:
             report(db, start, end)
+    if saved is not None:
+        deliver_report(saved)
 
 
 if __name__ == '__main__':

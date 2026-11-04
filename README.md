@@ -42,6 +42,27 @@ sudo bash Netwatch-orange-pi/install.sh --interface eth0 --gateway 192.168.1.1 -
 
 Каталог создаётся вместе с первым сохранённым отчётом. Чтобы получить файл сразу, запустите `sudo systemctl start netwatch-speed.service`. Если файла всё ещё нет, проверьте `sudo journalctl -u netwatch-speed.service -n 20 --no-pager`.
 
+## Отправка отчёта в Telegram
+
+По желанию Netwatch отправляет готовый `.txt` в личный чат с ботом сразу после сохранения ежедневного отчёта. Если Telegram недоступен, отчёт остаётся в `/var/lib/netwatch/reports`, а причина записывается в журнал службы.
+
+1. В Telegram откройте [@BotFather](https://t.me/BotFather), отправьте `/newbot` и создайте отдельного бота для Netwatch.
+2. После установки последней версии выполните на устройстве:
+
+   ```sh
+   sudo python3 /usr/local/lib/netwatch/netwatch_telegram.py
+   ```
+
+   Вставьте токен в скрытый запрос в терминале. Откройте ссылку, которую покажет программа, нажмите **Start** в Telegram и вернитесь в терминал, чтобы нажать Enter. Программа привяжет личный чат по одноразовому коду. Токен хранится в закрытом файле `/etc/credstore/netwatch-telegram.json`.
+3. Запустите пробный замер и проверьте доставку:
+
+   ```sh
+   sudo systemctl start netwatch-speed.service
+   sudo journalctl -u netwatch-speed.service -n 20 --no-pager
+   ```
+
+   Успешная отправка отмечается строкой `Telegram delivery succeeded`. Дальше отчёты отправляются по обычному расписанию Netwatch. Чтобы отключить только отправку, переместите файл учётных данных за пределы `/etc/credstore` в закрытый каталог или удалите его.
+
 ## Отчёт и проверка
 
 ```sh
