@@ -137,7 +137,7 @@ def main():
     if args.maintenance:
         with closing(sqlite3.connect(DB, uri=True)) as db, db:
             db.execute('BEGIN')
-            summaries = maintain_reports(db)
+            summaries = maintain_reports(db, now=datetime.fromtimestamp(end / 1000, ZONE))
         deliver_summaries(summaries)
 
 

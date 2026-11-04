@@ -153,21 +153,38 @@ def render_summary(db, period, buckets, tables, targets):
             print('  Speed: no measurements')
 
 
+def scheduled_summary_kinds(day):
+    if day.day != 1:
+        return ()
+    if day.month == 1:
+        return ('monthly', 'yearly')
+    if day.month in (4, 7, 10):
+        return ('monthly', 'quarterly')
+    return ('monthly',)
+
+
 def maintain_reports(db, directory=REPORT_DIR, now=None):
     now = now if now is not None else datetime.now(ZONE)
+    today = now.astimezone(ZONE).date()
+    scheduled_kinds = scheduled_summary_kinds(today)
+    scheduled_paths = []
     existing_periods = prune_reports(directory, now)
     tables = tables_in(db)
     targets = [target for target, in db.execute(
         'SELECT DISTINCT target FROM probes ORDER BY target'
     )] if 'probes' in tables else []
-    for period, buckets in completed_periods(now.astimezone(ZONE).date()):
-        if period in existing_periods:
-            continue
-        if midnight_ms(buckets[-1][2]) <= (now.timestamp() - RETENTION_SECONDS) * 1000:
-            continue
-        if has_measurements(db, tables, targets, buckets[0][1], buckets[-1][2]):
+    for period, buckets in completed_periods(today):
+        scheduled = period.partition('-')[0] in scheduled_kinds
+        if period not in existing_periods:
+            start, end = buckets[0][1], buckets[-1][2]
+            if midnight_ms(end) <= (now.timestamp() - RETENTION_SECONDS) * 1000:
+                continue
+            if not scheduled and not has_measurements(db, tables, targets, start, end):
+                continue
             existing_periods[period] = write_report(
                 lambda: render_summary(db, period, buckets, tables, targets),
                 period, directory
             )
-    return list(existing_periods.values())
+        if scheduled:
+            scheduled_paths.append(existing_periods[period])
+    return scheduled_paths
