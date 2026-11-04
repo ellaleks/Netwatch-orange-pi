@@ -1,0 +1,19 @@
+[Unit]
+Description=Netwatch ICMP monitor
+After=network.target
+RequiresMountsFor=/var/lib/netwatch
+
+[Service]
+Type=simple
+User=netwatch
+ExecStart=/usr/bin/python3 -u /usr/local/lib/netwatch/netwatch.py
+Restart=on-failure
+RestartSec=10s
+UMask=0027
+NoNewPrivileges=yes
+ProtectHome=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/netwatch
+
+[Install]
+WantedBy=multi-user.target

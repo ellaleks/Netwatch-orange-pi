@@ -1,0 +1,15 @@
+[Unit]
+Description=Netwatch HTTPS speed measurement
+After=network.target
+RequiresMountsFor=/var/lib/netwatch
+
+[Service]
+Type=oneshot
+User=netwatch
+ExecStart=/usr/bin/python3 -u /usr/local/lib/netwatch/netwatch-speed.py
+TimeoutStartSec=150s
+UMask=0027
+NoNewPrivileges=yes
+ProtectHome=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/netwatch

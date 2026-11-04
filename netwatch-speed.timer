@@ -1,0 +1,9 @@
+[Unit]
+Description=Daily Netwatch speed measurement
+
+[Timer]
+OnCalendar=*-*-* 04:15:00 Europe/Brussels
+Persistent=false
+
+[Install]
+WantedBy=timers.target
