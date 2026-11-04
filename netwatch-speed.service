@@ -6,9 +6,8 @@ RequiresMountsFor=/var/lib/netwatch
 [Service]
 Type=oneshot
 User=netwatch
-ExecStart=/usr/bin/python3 -u /usr/local/lib/netwatch/netwatch-speed.py
-ExecStopPost=/usr/bin/python3 -u /usr/local/lib/netwatch/netwatch-report.py --hours 24 --save
-TimeoutStartSec=150s
+ExecStart=/usr/bin/python3 -u /usr/local/lib/netwatch/netwatch-speed.py --daily
+TimeoutStartSec=210s
 UMask=0027
 NoNewPrivileges=yes
 ProtectHome=yes

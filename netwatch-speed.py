@@ -1,7 +1,11 @@
+import argparse
 import json
+import os
 import sqlite3
 import subprocess
+import sys
 import time
+from pathlib import Path
 
 from netwatch_config import network_settings
 
@@ -73,5 +77,26 @@ def main():
     return int(failed)
 
 
+def run_daily():
+    speed_status = 1
+    try:
+        speed_status = main()
+    finally:
+        report_script = Path(__file__).with_name("netwatch-report.py")
+        environment = {
+            **os.environ,
+            "SERVICE_RESULT": "exit-code" if speed_status else "success",
+        }
+        report = subprocess.run(
+            [sys.executable, "-u", str(report_script), "--hours", "24", "--save"],
+            env=environment,
+        )
+    return speed_status or report.returncode
+
+
 if __name__ == "__main__":
-    raise SystemExit(main())
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--daily", action="store_true",
+                        help="Save and deliver the daily report after the speed test")
+    args = parser.parse_args()
+    raise SystemExit(run_daily() if args.daily else main())
