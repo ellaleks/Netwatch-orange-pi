@@ -89,17 +89,24 @@ def setup():
     token = getpass.getpass("BotFather token (hidden): ").strip()
     bot = telegram_api(token, "getMe")
     code = secrets.token_urlsafe(16)
+    command = f"/start {code}"
     print(f"Open https://t.me/{bot['username']}?start={code} in Telegram and press Start.")
-    input("Then press Enter here: ")
-    updates = telegram_api(token, "getUpdates", b'{"allowed_updates":["message"]}')
-    chats = set()
-    for update in updates:
-        message = update.get("message", {})
-        chat = message.get("chat", {})
-        if chat.get("type") == "private" and message.get("text") == f"/start {code}":
-            chats.add(chat["id"])
-    if len(chats) != 1:
-        raise TelegramError("Pairing message not found in a single private chat. Try again with a new bot.")
+    print(f"Or send this exact message in the private chat with @{bot['username']}:")
+    print(command)
+    while True:
+        input("After sending it, press Enter here (Ctrl+C to cancel): ")
+        updates = telegram_api(token, "getUpdates", b'{"allowed_updates":["message"]}')
+        chats = set()
+        for update in updates:
+            message = update.get("message", {})
+            chat = message.get("chat", {})
+            if chat.get("type") == "private" and message.get("text") == command:
+                chats.add(chat["id"])
+        if len(chats) == 1:
+            break
+        if len(chats) > 1:
+            raise TelegramError("The pairing code appeared in multiple chats. Run setup again for a new code.")
+        print("No matching message yet. Send the exact command above and try again.")
 
     CREDSTORE.mkdir(mode=0o700, exist_ok=True)
     temp = tempfile.NamedTemporaryFile(
@@ -118,5 +125,7 @@ def setup():
 if __name__ == "__main__":
     try:
         setup()
+    except KeyboardInterrupt:
+        raise SystemExit("\nNetwatch: Telegram setup cancelled.") from None
     except (OSError, EOFError, TelegramError) as exc:
         raise SystemExit(f"Netwatch: {exc}")
