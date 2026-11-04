@@ -1,5 +1,5 @@
 [Unit]
-Description=Netwatch HTTPS speed measurement
+Description=Netwatch HTTPS speed measurement and daily report
 After=network.target
 RequiresMountsFor=/var/lib/netwatch
 
@@ -7,6 +7,7 @@ RequiresMountsFor=/var/lib/netwatch
 Type=oneshot
 User=netwatch
 ExecStart=/usr/bin/python3 -u /usr/local/lib/netwatch/netwatch-speed.py
+ExecStopPost=/usr/bin/python3 -u /usr/local/lib/netwatch/netwatch-report.py --hours 24 --save
 TimeoutStartSec=150s
 UMask=0027
 NoNewPrivileges=yes

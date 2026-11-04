@@ -1,13 +1,18 @@
 import argparse
+import os
 import sqlite3
+import tempfile
 import time
+from contextlib import redirect_stdout
 from datetime import datetime
 from itertools import groupby
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from netwatch_config import EXTERNAL_TARGETS, network_settings
 
 DB = 'file:/var/lib/netwatch/netwatch.sqlite3?mode=ro'
+REPORT_DIR = Path('/var/lib/netwatch/reports')
 _, GATEWAY = network_settings()
 TARGETS = (GATEWAY, *EXTERNAL_TARGETS)
 ZONE = ZoneInfo('Europe/Brussels')
@@ -18,13 +23,22 @@ def stamp(ms):
     return datetime.fromtimestamp(ms / 1000, ZONE).isoformat(timespec='seconds')
 
 
+def tables_in(db):
+    return {name for name, in db.execute(
+        "SELECT name FROM sqlite_master WHERE type = 'table'"
+    )}
+
+
 def report(db, start, end):
     counts = {target: dict.fromkeys(('ok', 'no_reply', 'error'), 0)
               for target in TARGETS}
-    rows = db.execute('''
-        SELECT run_id, cycle, ts_ms, target, status
-        FROM probes WHERE ts_ms BETWEEN ? AND ? ORDER BY rowid
-    ''', (start, end))
+    tables = tables_in(db)
+    rows = ()
+    if 'probes' in tables:
+        rows = db.execute('''
+            SELECT run_id, cycle, ts_ms, target, status
+            FROM probes WHERE ts_ms BETWEEN ? AND ? ORDER BY rowid
+        ''', (start, end))
 
     previous = None
     active = None
@@ -86,16 +100,60 @@ def report(db, start, end):
     print('\nEvents:')
     print('\n'.join(events) if events else 'none')
 
+    print('\nSpeed tests (HTTPS, Cloudflare):')
+    service_result = os.environ.get('SERVICE_RESULT')
+    if service_result and service_result != 'success':
+        print(f'Latest speed service result: {service_result}')
+    speed_rows = ()
+    if 'speed_tests' in tables:
+        speed_rows = db.execute('''
+            SELECT started_ms, finished_ms, direction, bytes, mbps, detail
+            FROM speed_tests
+            WHERE finished_ms BETWEEN ? AND ?
+            ORDER BY finished_ms, rowid
+        ''', (start, end)).fetchall()
+    if not speed_rows:
+        print('No speed measurements in this period.')
+    for started, finished, direction, size, mbps, detail in speed_rows:
+        result = f'{mbps:.2f} Mbit/s ({size} bytes)' if mbps is not None else (
+            f'error: {detail or "no result"}'
+        )
+        print(f'{stamp(started)} .. {stamp(finished)}  {direction}: {result}')
+
+
+def save_report(db, start, end):
+    REPORT_DIR.mkdir(mode=0o750, exist_ok=True)
+    temporary = tempfile.NamedTemporaryFile(
+        mode='w', encoding='utf-8', dir=REPORT_DIR, prefix='.netwatch-', delete=False
+    )
+    temporary_path = Path(temporary.name)
+    try:
+        with temporary, redirect_stdout(temporary):
+            report(db, start, end)
+        created = datetime.now(ZONE).strftime('%Y-%m-%d_%H-%M-%S%z')
+        final_path = REPORT_DIR / f'netwatch-{created}.txt'
+        temporary_path.replace(final_path)
+    finally:
+        temporary_path.unlink(missing_ok=True)
+    print(f'Report saved: {final_path}')
+
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--hours', type=int, default=24)
+    parser.add_argument('--save', action='store_true',
+                        help='Save a dated report to /var/lib/netwatch/reports')
     args = parser.parse_args()
     if args.hours < 1:
         parser.error('--hours must be at least 1')
     end = time.time_ns() // 1_000_000
     with sqlite3.connect(DB, uri=True) as db:
-        report(db, end - args.hours * 3_600_000, end)
+        db.execute('BEGIN')
+        start = end - args.hours * 3_600_000
+        if args.save:
+            save_report(db, start, end)
+        else:
+            report(db, start, end)
 
 
 if __name__ == '__main__':
