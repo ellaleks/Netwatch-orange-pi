@@ -157,7 +157,7 @@ def scheduled_summary_kinds(day):
     if day.day != 1:
         return ()
     if day.month == 1:
-        return ('monthly', 'yearly')
+        return ('monthly', 'quarterly', 'yearly')
     if day.month in (4, 7, 10):
         return ('monthly', 'quarterly')
     return ('monthly',)
