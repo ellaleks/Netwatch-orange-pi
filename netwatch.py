@@ -7,8 +7,11 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from uuid import uuid4
 
+from netwatch_config import EXTERNAL_TARGETS, network_settings
+
 DB = "/var/lib/netwatch/netwatch.sqlite3"
-TARGETS = ("192.168.0.1", "1.1.1.1", "8.8.8.8")
+INTERFACE, GATEWAY = network_settings()
+TARGETS = (GATEWAY, *EXTERNAL_TARGETS)
 INTERVAL = 5
 RTT = re.compile(r"rtt min/avg/max/mdev = [\d.]+/([\d.]+)/")
 
@@ -16,7 +19,7 @@ RTT = re.compile(r"rtt min/avg/max/mdev = [\d.]+/([\d.]+)/")
 def probe(target):
     try:
         result = subprocess.run(
-            ["/usr/bin/ping", "-4", "-n", "-q", "-I", "wlan0",
+            ["/usr/bin/ping", "-4", "-n", "-q", "-I", INTERFACE,
              "-c", "1", "-W", "2", "-w", "3", target],
             capture_output=True, text=True, timeout=4,
             env={**os.environ, "LC_ALL": "C"},

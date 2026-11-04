@@ -5,8 +5,11 @@ from datetime import datetime
 from itertools import groupby
 from zoneinfo import ZoneInfo
 
+from netwatch_config import EXTERNAL_TARGETS, network_settings
+
 DB = 'file:/var/lib/netwatch/netwatch.sqlite3?mode=ro'
-TARGETS = ('192.168.0.1', '1.1.1.1', '8.8.8.8')
+_, GATEWAY = network_settings()
+TARGETS = (GATEWAY, *EXTERNAL_TARGETS)
 ZONE = ZoneInfo('Europe/Brussels')
 GAP_MS = 8_000
 
@@ -28,8 +31,11 @@ def report(db, start, end):
     events = []
     for (run, cycle, ts), probes in groupby(rows, key=lambda row: row[:3]):
         statuses = {target: status for _, _, _, target, status in probes}
-        for target in TARGETS:
-            counts[target][statuses.get(target, 'error')] += 1
+        gateway_targets = statuses.keys() - set(EXTERNAL_TARGETS)
+        gateway_target = next(iter(gateway_targets)) if len(gateway_targets) == 1 else GATEWAY
+        for target in (gateway_target, *EXTERNAL_TARGETS):
+            totals = counts.setdefault(target, dict.fromkeys(('ok', 'no_reply', 'error'), 0))
+            totals[statuses.get(target, 'error')] += 1
 
         if previous is None:
             if ts - start > GAP_MS:
@@ -44,7 +50,8 @@ def report(db, start, end):
                     active = None
                 events.append(f'{stamp(prev_ts)} .. {stamp(ts)}  sampling_break')
 
-        gateway, cf, google = (statuses.get(target, 'error') for target in TARGETS)
+        gateway, cf, google = (statuses.get(target, 'error')
+                               for target in (gateway_target, *EXTERNAL_TARGETS))
         label = None
         if 'error' in (gateway, cf, google):
             label = 'probe_error'

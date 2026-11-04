@@ -3,10 +3,13 @@ import sqlite3
 import subprocess
 import time
 
+from netwatch_config import network_settings
+
 DB = "/var/lib/netwatch/netwatch.sqlite3"
 BASE = "https://speed.cloudflare.com"
+INTERFACE, _ = network_settings()
 CURL = [
-    "/usr/bin/curl", "-q", "-4", "--interface", "if!wlan0", "--noproxy", "*",
+    "/usr/bin/curl", "-q", "-4", "--interface", f"if!{INTERFACE}", "--noproxy", "*",
     "--silent", "--show-error", "--fail", "--connect-timeout", "5",
     "--max-time", "45", "--output", "/dev/null", "--write-out", "%{json}",
 ]

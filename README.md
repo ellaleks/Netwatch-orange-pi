@@ -1,58 +1,38 @@
-# Netwatch для Orange Pi Lite
+# Netwatch для Orange Pi и Linux
 
-Лёгкий круглосуточный монитор качества интернета для Debian 13 (Trixie). Каждые пять секунд он проверяет домашний шлюз и два внешних IPv4-адреса через Wi-Fi, сохраняет результаты в SQLite и формирует отчёты о потерях и перерывах. Отдельный таймер systemd выполняет ежедневный замер скорости через HTTPS.
+Лёгкий круглосуточный монитор качества интернета. Каждые пять секунд Netwatch проверяет домашний шлюз и два внешних IPv4-адреса, сохраняет результаты в SQLite и формирует отчёт о потерях и перерывах. Отдельный таймер systemd выполняет ежедневный замер скорости через HTTPS.
 
-- `netwatch.py` — параллельный ping шлюза, Cloudflare и Google.
-- `netwatch-report.py` — отчёт за выбранное число часов.
-- `netwatch-speed.py` — короткие передачи к Cloudflare в обоих направлениях.
-- `*.service`, `*.timer` — запуск после загрузки и расписание.
+## Установка одной командой
 
-## Настройки
-
-По умолчанию используются интерфейс `wlan0`, шлюз `192.168.0.1` и внешние адреса `1.1.1.1`, `8.8.8.8`. Если сеть отличается, проверьте `ip -4 route` и измените интерфейс в обоих скриптах сбора, а адреса — в `netwatch.py` и `netwatch-report.py`. Время отчёта задаётся через `ZONE` в скрипте отчёта. По умолчанию таймер запускается в 04:15 по Брюсселю.
-
-## Установка на Debian 13
-
-Команды ниже рассчитаны на новую установку и выполняются из каталога проекта. Если Netwatch уже работает, используйте существующего владельца базы и сохраните текущие параметры службы. Перед заменой файлов сравните их с установленными.
+На компьютере с **Git, sudo, работающим systemd и IPv4-маршрутом** выполните:
 
 ```sh
-sudo apt install python3 iputils-ping linux-sysctl-defaults curl ca-certificates tzdata
-getent passwd netwatch >/dev/null || sudo useradd --system --user-group --no-create-home --shell /usr/sbin/nologin netwatch
-sudo install -d -m 0755 /usr/local/lib/netwatch
-sudo install -d -o netwatch -g netwatch -m 0750 /var/lib/netwatch
-sudo install -m 0644 netwatch.py netwatch-report.py netwatch-speed.py /usr/local/lib/netwatch/
-sudo install -m 0644 netwatch.service netwatch-speed.service netwatch-speed.timer /etc/systemd/system/
+git clone https://github.com/ellaleks/Netwatch-orange-pi.git && sudo bash Netwatch-orange-pi/install.sh
 ```
 
-Проверьте доступ к ping от имени службы. Если команда сообщает об ошибке прав, проверьте `sysctl net.ipv4.ping_group_range` и применение настроек пакета `linux-sysctl-defaults`.
+Установщик рассчитан на Debian, Ubuntu, Armbian, Fedora и Arch Linux. Для других дистрибутивов с systemd он может использовать уже установленные Python 3.9+ с SQLite, iproute2, iputils-ping, curl, сертификаты CA, tzdata и util-linux. На Debian 13 и Orange Pi Lite проверен сам Netwatch. Установщик не привязан к архитектуре процессора.
+
+Он определяет интерфейс и шлюз по IPv4-маршруту, устанавливает недостающие зависимости через системный менеджер пакетов, запускает ping-службу и включает ежедневный замер скорости. Службы работают от непривилегированного пользователя. При обновлении существующей установки сохраняются база и её владелец, а службы получают новые файлы проекта. Служба ping при этом перезапускается.
+
+Если сеть использует VPN или несколько подключений, можно явно выбрать интерфейс и шлюз. Если замеры скорости не нужны, добавьте `--no-speed`:
 
 ```sh
-sudo -u netwatch /usr/bin/ping -4 -n -I wlan0 -c 1 -W 2 192.168.0.1
-sudo systemd-analyze verify /etc/systemd/system/netwatch.service /etc/systemd/system/netwatch-speed.service /etc/systemd/system/netwatch-speed.timer
-sudo systemctl daemon-reload
-sudo systemctl enable --now netwatch.service
-systemctl status netwatch.service --no-pager
+sudo bash Netwatch-orange-pi/install.sh --interface eth0 --gateway 192.168.1.1 --no-speed
 ```
 
-Замер скорости включается отдельно. Пробный запуск передаёт примерно 12 МБ данных. Если он успешен, можно включить таймер.
+Параметры сети хранятся в `/etc/netwatch/config.ini` и используются при повторной установке. Внешние адреса — Cloudflare `1.1.1.1` и Google `8.8.8.8`. Чтобы обновить уже клонированный проект, выполните `git -C Netwatch-orange-pi pull --ff-only && sudo bash Netwatch-orange-pi/install.sh`. Если нужен только ping, передавайте `--no-speed` и при обновлении.
+
+## Отчёт и проверка
 
 ```sh
-sudo systemctl start netwatch-speed.service &&
-sudo systemctl enable --now netwatch-speed.timer
+systemctl is-active netwatch.service
 systemctl list-timers --all netwatch-speed.timer
-sudo journalctl -u netwatch-speed.service -n 10 --no-pager
+sudo -u "$(systemctl show -p User --value netwatch.service)" \
+    /usr/bin/python3 /usr/local/lib/netwatch/netwatch-report.py --hours 24
 ```
 
-Если плата выключена в момент замера, он пропускается. Измеренная скорость относится к одной HTTPS-передаче с платы через выбранный интерфейс. Во время теста задержка ping может вырасти.
+Чтобы сохранить отчёт, добавьте к команде `> ~/netwatch-24h.txt`. По умолчанию время в отчёте отображается по Брюсселю. Отчёт разделяет отсутствие ответа, ошибки проверки и паузы сбора. `external_down` означает, что шлюз ответил, а оба внешних узла промолчали. `all_down` означает отсутствие ответа от всех трёх узлов. Границы событий приблизительны из-за интервала опроса.
 
-## Отчёт и хранение
+Замер скорости запускается в **04:15 по Брюсселю** и передаёт около 12 МБ в день. Если плата выключена, замер пропускается. Измеренная скорость относится к HTTPS-передаче с устройства через выбранный интерфейс. Во время теста задержка ping может вырасти. Для разовой проверки выполните `sudo systemctl start netwatch-speed.service`, затем `sudo journalctl -u netwatch-speed.service -n 10 --no-pager`.
 
-```sh
-sudo -u netwatch /usr/bin/python3 /usr/local/lib/netwatch/netwatch-report.py --hours 24
-```
-
-Отчёт отделяет запросы без ответа от ошибок выполнения и пропусков сбора. `external_down` означает, что шлюз ответил, а оба внешних узла промолчали. `all_down` означает отсутствие ответа от всех трёх узлов. Это наблюдения с точки зрения Orange Pi. Границы событий оцениваются с точностью до интервала опроса.
-
-База хранится в `/var/lib/netwatch/netwatch.sqlite3`. Таблица `probes` содержит результаты ping, а `speed_tests` — интервалы передач, объём и скорость. История накапливается без автоматического удаления. Для сохранения отчёта добавьте к команде `> ~/netwatch-24h.txt`. При плановом выключении платы используйте `sudo poweroff`.
-
-Для диагностики запуска используйте `sudo journalctl -u netwatch.service -n 20 --no-pager`. Если служба активна, повторите отчёт через 15 секунд и проверьте, что счётчики растут.
+База `/var/lib/netwatch/netwatch.sqlite3` хранит результаты ping в таблице `probes`, а интервалы, объёмы и скорость передач — в `speed_tests`. История накапливается без автоматического удаления. Для проверки запуска службы используйте `sudo journalctl -u netwatch.service -n 20 --no-pager`. Если установщик сообщает об ошибке прав ping, проверьте `sysctl net.ipv4.ping_group_range`. Для штатного выключения используйте `sudo poweroff`.
