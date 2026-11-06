@@ -7,6 +7,8 @@ from datetime import date, datetime, time, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from netwatch_analysis import OutageAnalysis, probe_cycles, probe_statuses
+from netwatch_config import network_settings
 from netwatch_telegram import delivery_marker
 
 ZONE = ZoneInfo('Europe/Brussels')
@@ -151,6 +153,15 @@ def render_summary(db, period, buckets, tables, targets):
             print(f'  {direction}: OK {ok}, errors {errors}, mean {average}')
         if not speed:
             print('  Speed: no measurements')
+
+    analysis = OutageAnalysis()
+    if 'probes' in tables:
+        default_gateway = network_settings()[1]
+        start, end = midnight_ms(buckets[0][1]), midnight_ms(buckets[-1][2])
+        for sample, statuses in probe_cycles(db, start, end):
+            _, gateway, first, second = probe_statuses(statuses, default_gateway)
+            analysis.observe(sample, gateway, first, second)
+    analysis.print_summary()
 
 
 def scheduled_summary_kinds(day):

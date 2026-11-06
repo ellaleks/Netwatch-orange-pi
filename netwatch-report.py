@@ -4,8 +4,8 @@ import sqlite3
 import time
 from contextlib import closing
 from datetime import datetime
-from itertools import groupby
 
+from netwatch_analysis import GAP_MS, OutageAnalysis, consecutive, probe_cycles, probe_statuses
 from netwatch_config import EXTERNAL_TARGETS, network_settings
 from netwatch_summary import ZONE, maintain_reports, tables_in, write_report
 from netwatch_telegram import deliver_report, deliver_summaries
@@ -13,7 +13,6 @@ from netwatch_telegram import deliver_report, deliver_summaries
 DB = 'file:/var/lib/netwatch/netwatch.sqlite3?mode=ro'
 _, GATEWAY = network_settings()
 TARGETS = (GATEWAY, *EXTERNAL_TARGETS)
-GAP_MS = 8_000
 
 
 def stamp(ms):
@@ -24,20 +23,16 @@ def report(db, start, end):
     counts = {target: dict.fromkeys(('ok', 'no_reply', 'error'), 0)
               for target in TARGETS}
     tables = tables_in(db)
-    rows = ()
-    if 'probes' in tables:
-        rows = db.execute('''
-            SELECT run_id, cycle, ts_ms, target, status
-            FROM probes WHERE ts_ms BETWEEN ? AND ? ORDER BY rowid
-        ''', (start, end))
+    cycles = probe_cycles(db, start, end) if 'probes' in tables else ()
+    analysis = OutageAnalysis()
 
     previous = None
     active = None
     events = []
-    for (run, cycle, ts), probes in groupby(rows, key=lambda row: row[:3]):
-        statuses = {target: status for _, _, _, target, status in probes}
-        gateway_targets = statuses.keys() - set(EXTERNAL_TARGETS)
-        gateway_target = next(iter(gateway_targets)) if len(gateway_targets) == 1 else GATEWAY
+    for sample, statuses in cycles:
+        ts = sample[2]
+        gateway_target, gateway, cf, google = probe_statuses(statuses, GATEWAY)
+        analysis.observe(sample, gateway, cf, google)
         for target in (gateway_target, *EXTERNAL_TARGETS):
             totals = counts.setdefault(target, dict.fromkeys(('ok', 'no_reply', 'error'), 0))
             totals[statuses.get(target, 'error')] += 1
@@ -46,17 +41,14 @@ def report(db, start, end):
             if ts - start > GAP_MS:
                 events.append(f'{stamp(start)} .. {stamp(ts)}  no_samples')
         else:
-            prev_run, prev_cycle, prev_ts = previous
-            if (run != prev_run or cycle != prev_cycle + 1
-                    or not 0 < ts - prev_ts <= GAP_MS):
+            prev_ts = previous[2]
+            if not consecutive(previous, sample):
                 if active is not None:
                     label, first = active
                     events.append(f'{stamp(first)} .. {stamp(prev_ts)}  {label}  last_seen')
                     active = None
                 events.append(f'{stamp(prev_ts)} .. {stamp(ts)}  sampling_break')
 
-        gateway, cf, google = (statuses.get(target, 'error')
-                               for target in (gateway_target, *EXTERNAL_TARGETS))
         label = None
         if 'error' in (gateway, cf, google):
             label = 'probe_error'
@@ -70,7 +62,7 @@ def report(db, start, end):
             active = None
         if label is not None and active is None:
             active = (label, ts)
-        previous = (run, cycle, ts)
+        previous = sample
 
     print(f'Period: {stamp(start)} .. {stamp(end)}')
     print('Target          OK  No reply  Errors   ICMP loss')
@@ -110,6 +102,7 @@ def report(db, start, end):
             f'error: {detail or "no result"}'
         )
         print(f'{stamp(started)} .. {stamp(finished)}  {direction}: {result}')
+    analysis.print_summary()
 
 
 def main():
